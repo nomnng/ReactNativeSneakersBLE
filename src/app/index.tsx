@@ -1,98 +1,117 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import CustomButton from "@/components/ui/CustomButton";
+import { bleManager } from "@/services/bleManager";
+import { globalStyles } from "@/styles/global";
+import { Stack, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Device } from "react-native-ble-plx";
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+export default function DeviceListScreen() {
+	const [devices, setDevices] = useState<Device[]>([]);
+	const [isScanning, setIsScanning] = useState(false);
+	const [isConnecting, setIsConnecting] = useState(false);
+	const router = useRouter();
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+	const startScan = () => {
+		setIsScanning(true);
+		setDevices([]);
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+		bleManager.startDeviceScan(null, null, (error, device) => {
+			if (error) {
+				console.error(error);
+				setIsScanning(false);
+				return;
+			}
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+			if (device && device.name) {
+				setDevices((prevDevices) => {
+					const exists = prevDevices.find((d) => d.id === device.id);
+					if (!exists) {
+						return [...prevDevices, device];
+					}
+					return prevDevices;
+				});
+			}
+		});
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+		setTimeout(() => {
+			bleManager.stopDeviceScan();
+			setIsScanning(false);
+		}, 10000);
+	};
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
-  );
+	useEffect(() => {
+		return () => { bleManager.stopDeviceScan() };
+	}, []);
+
+	const scanButton = (
+		<CustomButton
+			title={isScanning ? "Scanning..." : "Scan"}
+			onPress={startScan}
+			disabled={isScanning}
+		/>
+	);
+
+	const handleConnect = async (device: Device) => {
+		setIsConnecting(true);
+		try {
+			bleManager.stopDeviceScan();
+
+			const connectedDevice = await device.connect();
+			await connectedDevice.discoverAllServicesAndCharacteristics();
+
+			router.push({
+				pathname: "/device",
+				params: { deviceId: connectedDevice.id, name: connectedDevice.name }
+			});
+		} catch (error) {
+			console.error("Connection failed", error);
+		} finally {
+			setIsConnecting(false);
+		}
+	};
+	return (
+		<>
+			<Stack.Screen options={{
+				title: "Device list",
+				headerRight: () => scanButton,
+			}}/>
+			<View style={globalStyles.container}>
+				<FlatList
+					style={{flex: 1, backgroundColor: "#FFF", width: "100%"}}
+					data={devices}
+					keyExtractor={(item) => item.id}
+					renderItem={({item}) => (
+						<TouchableOpacity style={styles.deviceItem} onPress={() => handleConnect(item)}>
+							<Text style={styles.deviceName}>{item.name || "Unknown Device"}</Text>
+							<Text style={styles.deviceId}>{item.id}</Text>
+						</TouchableOpacity>
+					)}
+				/>
+				{isConnecting && (
+					<View style={styles.overlay}>
+						<Text style={styles.loaderText}>Connecting...</Text>
+					</View>
+				)}
+			</View>
+		</>
+	);
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+	deviceItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: "#eee" },
+	deviceName: { fontSize: 16, fontWeight: "bold" },
+	deviceId: { fontSize: 12, color: "#666" },
+	overlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,		
+	},
+    loaderText: {
+    	color: "#3C8",
+        fontSize: 32,
+        fontWeight: '500',
+    },	
 });
