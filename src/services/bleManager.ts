@@ -1,6 +1,13 @@
 import { BleManager } from 'react-native-ble-plx';
 
+const VALID_RANGE_DESCRIPTOR_UUID = "00002906-0000-1000-8000-00805f9b34fb";
+
 export const bleManager = new BleManager();
+
+export interface ValidRange {
+	lower: number;
+	upper: number;
+};
 
 export const writeByteCharacteristic = async (
 	id: string, serviceUUID:
@@ -100,4 +107,55 @@ export const subscribeToCharacteristic = (
 	);
 
 	return subscription;
+};
+
+export const readValidRange = async (
+    id: string,
+    serviceUUID: string,
+    charUUID: string
+): Promise<ValidRange | null> => {
+    try {
+        const descriptor = await bleManager.readDescriptorForDevice(
+            id,
+            serviceUUID,
+            charUUID,
+            VALID_RANGE_DESCRIPTOR_UUID
+        );
+
+        if (!descriptor.value) return null;
+
+        const binaryString = atob(descriptor.value);
+        const buffer = new ArrayBuffer(binaryString.length);
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const dataView = new DataView(buffer);
+		const fieldSize = buffer.byteLength / 2;
+
+        let lower: number, upper: number;
+
+		switch (fieldSize) {
+			case 1:
+				lower = dataView.getUint8(0);
+				upper = dataView.getUint8(1);
+				break;
+			case 2:
+				lower = dataView.getUint16(0, true);
+				upper = dataView.getUint16(2, true);
+				break;
+			case 4:
+				lower = dataView.getUint32(0, true);
+				upper = dataView.getUint32(4, true);
+				break;
+			default:
+				throw new Error(`Unsupported field size: ${fieldSize} bytes`);
+		}
+
+		return { lower, upper };
+    } catch (error) {
+        console.error("Read descriptor error:", error);
+        return null;
+    }
 };

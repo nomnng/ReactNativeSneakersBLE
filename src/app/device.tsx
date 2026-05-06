@@ -1,7 +1,9 @@
 import CustomButton from "@/components/ui/CustomButton";
 import {
+	ValidRange,
 	bleManager,
 	readByteCharacteristic,
+	readValidRange,
 	subscribeToCharacteristic,
 	writeByteCharacteristic,
 } from "@/services/bleManager";
@@ -17,11 +19,18 @@ const BATTERY_VOLTAGE_CHARACTERISTIC_UUID = "b7ce738e-4a4e-4784-864e-a1e2b6b7b78
 const BATTERY_CURRENT_CHARACTERISTIC_UUID = "26f4f771-6e4b-4751-be3b-494c5e09d724";
 const BATTERY_CHARGE_CHARACTERISTIC_UUID = "fdb4779e-cde9-4a6e-b739-cf485c23dd07";
 
+type DeviceScreenParams = {
+	deviceId: string;
+	name: string;
+};
 
 export default function DeviceScreen() {
-	const { deviceId, name } = useLocalSearchParams();
+	const { deviceId, name } = useLocalSearchParams<DeviceScreenParams>();
 	const [brightness, setBrightness] = useState<number | null>(null);
 	const [ledPattern, setLedPattern] = useState<number | null>(null);
+
+	const [brightnessValidRange, setBrightnessValidRange] = useState<ValidRange | null>(null);
+	const [ledPatternValidRange, setLedPatternValidRange] = useState<ValidRange | null>(null);
 
 	const [batteryVoltage, setBatteryVoltage] = useState("Loading...");
 	const [batteryCurrent, setBatteryCurrent] = useState("Loading...");
@@ -73,6 +82,20 @@ export default function DeviceScreen() {
 						setBatteryCharge(`${charge}%`);
 					},
 				);
+
+				const brightnessValidRange = await readValidRange(
+					deviceId,
+					SERVICE_UUID,
+					BRIGHTNESS_CHARACTERISTIC_UUID
+				);
+				setBrightnessValidRange(brightnessValidRange);
+
+				const ledPatternValidRange = await readValidRange(
+					deviceId,
+					SERVICE_UUID,
+					LED_PATTERN_CHARACTERISTIC_UUID
+				);
+				setLedPatternValidRange(ledPatternValidRange);
 			} catch (error) {
 				console.error(error);
 			}
@@ -82,18 +105,36 @@ export default function DeviceScreen() {
 		return () => { bleManager.cancelDeviceConnection(deviceId) };
 	}, []);
 
+	const getValueInRange = (value: number, validRange: ValidRange) => {
+		if (validRange.lower > value) return validRange.lower;
+		if (validRange.upper < value) return validRange.upper;
+		return value;
+	};
+
 	const updateBrightness = (value: number) => {
-		if (value < 0) {
-			value = 0;
+		if (!brightnessValidRange) {
+			return;
 		}
+
+		value = getValueInRange(value, brightnessValidRange);
+		if (value === brightness) {
+			return;
+		}
+
 		setBrightness(value);
 		writeByteCharacteristic(deviceId, SERVICE_UUID, BRIGHTNESS_CHARACTERISTIC_UUID, value);
 	};
 
 	const updateLedPattern = (value: number) => {
-		if (value < 0) {
-			value = 0;
+		if (!ledPatternValidRange) {
+			return;
 		}
+
+		value = getValueInRange(value, ledPatternValidRange);
+		if (value === ledPattern) {
+			return;
+		}
+
 		setLedPattern(value);
 		writeByteCharacteristic(deviceId, SERVICE_UUID, LED_PATTERN_CHARACTERISTIC_UUID, value);
 	};
@@ -110,9 +151,9 @@ export default function DeviceScreen() {
 					<Text style={styles.text}>{`CHARGE: ${batteryCharge}`}</Text>
 				</View>
 				<View style={styles.row}>
-					<CustomButton title="-" onPress={() => updateBrightness(brightness - 1)} />
+					<CustomButton title="-" onPress={() => updateBrightness(brightness - 10)} />
 					<Text style={styles.text}>{`BRIGHTNESS: ${brightness ?? "Loading..."}`}</Text>
-					<CustomButton title="+" onPress={() => updateBrightness(brightness + 1)} />
+					<CustomButton title="+" onPress={() => updateBrightness(brightness + 10)} />
 				</View>
 				<View style={styles.row}>
 					<CustomButton title="<" onPress={() => updateLedPattern(ledPattern - 1)} />
