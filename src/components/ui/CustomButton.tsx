@@ -1,8 +1,14 @@
-import React from "react";
-import { Text, Pressable, StyleSheet } from "react-native";
 import { colors } from "@/styles/global";
+import React from "react";
+import { Pressable, StyleSheet, Text } from "react-native";
 
-const CustomButton = ({ onPress, title, disabled = false }) => {
+interface CustomButtonProps {
+	onPress?: () => void;
+	title: string;
+	disabled?: boolean;
+};
+
+const CustomButton = ({ onPress, title, disabled = false }: CustomButtonProps) => {
 	return (
 		<Pressable 
 			onPress={disabled ? null : onPress} 

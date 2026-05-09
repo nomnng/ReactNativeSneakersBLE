@@ -1,4 +1,4 @@
-import { BleManager } from 'react-native-ble-plx';
+import { BleErrorCode, BleManager } from 'react-native-ble-plx';
 
 const VALID_RANGE_DESCRIPTOR_UUID = "00002906-0000-1000-8000-00805f9b34fb";
 
@@ -63,18 +63,31 @@ export const readInt32Characteristic = async (
 	return dataView.getInt32(0, isLittleEndian);
 };
 
+export const readByteCharacteristics = async (
+	id: string,
+	serviceUUID: string,
+	charUUIDs: string[],
+): Promise<(number | null)[]> => {
+	const values: ((number | null)[]) = [];
+	for (const charUUID of charUUIDs) {
+		const dataView = await readCharacteristic(id, serviceUUID, charUUID);
+		if (!dataView || dataView.byteLength != 1) {
+			values.push(null);
+			continue;
+		}
+		values.push(dataView.getUint8(0));
+	}
+
+	return values;
+};
+
 export const readByteCharacteristic = async (
 	id: string,
 	serviceUUID: string,
 	charUUID: string,
 ): Promise<number | null> => {
-	const dataView = await readCharacteristic(id, serviceUUID, charUUID);
-
-	if (!dataView || dataView.byteLength != 1) {
-		return null;
-	}
-
-	return dataView.getUint8(0);
+	const values = await readByteCharacteristics(id, serviceUUID, [charUUID]);
+	return values[0];
 };
 
 export const subscribeToCharacteristic = (
@@ -89,7 +102,12 @@ export const subscribeToCharacteristic = (
 		charUUID,
 		(error, characteristic) => {
 			if (error) {
-				console.error("Monitor error:", error);
+				if (
+					error.errorCode !== BleErrorCode.OperationCancelled &&
+					error.errorCode !== BleErrorCode.DeviceDisconnected
+				) {
+					console.error("Monitor error:", error);
+				}
 				return;
 			}
 
@@ -112,7 +130,8 @@ export const subscribeToCharacteristic = (
 export const readValidRange = async (
     id: string,
     serviceUUID: string,
-    charUUID: string
+    charUUID: string,
+	isLittleEndian: boolean = true
 ): Promise<ValidRange | null> => {
     try {
         const descriptor = await bleManager.readDescriptorForDevice(
@@ -142,12 +161,12 @@ export const readValidRange = async (
 				upper = dataView.getUint8(1);
 				break;
 			case 2:
-				lower = dataView.getUint16(0, true);
-				upper = dataView.getUint16(2, true);
+				lower = dataView.getUint16(0, isLittleEndian);
+				upper = dataView.getUint16(2, isLittleEndian);
 				break;
 			case 4:
-				lower = dataView.getUint32(0, true);
-				upper = dataView.getUint32(4, true);
+				lower = dataView.getUint32(0, isLittleEndian);
+				upper = dataView.getUint32(4, isLittleEndian);
 				break;
 			default:
 				throw new Error(`Unsupported field size: ${fieldSize} bytes`);
